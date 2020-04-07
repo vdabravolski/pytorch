@@ -6,6 +6,7 @@ const char* toString(DispatchKey t) {
   switch (t) {
     case DispatchKey::Undefined:
       return "Undefined";
+<<<<<<< HEAD
     case DispatchKey::CPU:
       return "CPU";
     case DispatchKey::CUDA:
@@ -30,6 +31,8 @@ const char* toString(DispatchKey t) {
       return "MSNPU";
     case DispatchKey::XLA:
       return "XLA";
+    case DispatchKey::Vulkan:
+      return "Vulkan";
     case DispatchKey::MkldnnCPU:
       return "MkldnnCPU";
     case DispatchKey::QuantizedCPU:

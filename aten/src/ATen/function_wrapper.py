@@ -221,7 +221,7 @@ scalar_types = [
     ('ComplexDouble', 'ComplexDouble', 'ComplexDouble', False),
 ]
 
-static_dispatch_backends = ['CPU', 'QuantizedCPU']
+static_dispatch_backends = ['CPU', 'QuantizedCPU', 'Vulkan']
 
 
 class NYIError(Exception):

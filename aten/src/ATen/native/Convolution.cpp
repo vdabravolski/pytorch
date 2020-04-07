@@ -47,6 +47,7 @@ struct ConvParams {
   bool use_mkldnn(const at::Tensor& input) const;
   bool use_nnpack(const at::Tensor& input) const;
   bool use_xnnpack(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& bias) const;
+  bool use_vulkan(const at::Tensor& input) const;
   bool is_depthwise(const at::Tensor& input, const at::Tensor& weight) const;
 };
 
@@ -272,6 +273,15 @@ auto ConvParams::use_xnnpack(
   }
 #endif
   return false;
+}
+
+auto ConvParams::use_vulkan(const at::Tensor& input) const -> bool {
+  return input.is_vulkan() &&
+         input.scalar_type() == kFloat &&
+         groups == 1 &&
+         !is_dilated() &&
+         !transposed &&
+         input.ndimension() == 4;
 }
 
 // We currently only have depthwise support for the case where groups ==
@@ -761,6 +771,10 @@ at::Tensor _convolution(
           bias,
           params.stride,
           params.padding);
+  } else if (params.use_vulkan(input)) {
+    output = at::vulkan_convolution(
+        input, weight, bias,
+        params.padding, params.stride, params.dilation, params.groups);
   } else if (input.device().type() == c10::DeviceType::CPU || input.device().type() == c10::DeviceType::CUDA) {
     if (params.groups == 1) {
       output = at::_convolution_nogroup(
