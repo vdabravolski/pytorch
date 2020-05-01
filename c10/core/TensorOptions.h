@@ -424,13 +424,6 @@ struct C10_API TensorOptions {
           default:
             AT_ERROR("Unsupported device type for mkldnn layout: ", device().type());
         }
-      case Layout::Vulkan:
-        switch (device().type()) {
-          case DeviceType::Vulkan:
-            return DispatchKey::VulkanTensorId;
-          default:
-            AT_ERROR("Unsupported device type for vulkan layout: ", device().type());
-        }
       default:
         AT_ERROR("Unsupported layout: ", layout());
     }
