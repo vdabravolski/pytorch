@@ -166,6 +166,9 @@ if(INTERN_BUILD_ATEN_OPS)
       --force_schema_registration
       --op_registration_whitelist ${OP_REGISTRATION_WHITELIST})
   endif()
+  if(USE_VULKAN OR USE_GLES)
+    set(GEN_VULKAN_FLAGS --vulkan)
+  endif()
 
   set(GEN_COMMAND
       "${PYTHON_EXECUTABLE}" ${CMAKE_CURRENT_LIST_DIR}/../aten/src/ATen/gen.py
@@ -174,6 +177,7 @@ if(INTERN_BUILD_ATEN_OPS)
       ${GEN_ROCM_FLAG}
       ${cwrap_files}
       ${CUSTOM_BUILD_FLAGS}
+      ${GEN_VULKAN_FLAGS}
   )
 
   execute_process(
