@@ -1,7 +1,7 @@
 #version 450 core
 layout(std430) buffer;
 layout(std430) uniform;
-layout(set = 0, rgba16f, binding = 0) writeonly mediump uniform image3D uOutput;
+layout(set = 0, rgba16f, binding = 0) writeonly highp uniform image3D uOutput;
 layout(set = 0, binding = 1) readonly buffer kernel {
   vec4 data[];
 }

@@ -63,10 +63,10 @@ void upsample_nearest2d(
       descriptorSetLayout,
       workGroupSize};
   computeUnit.createCommandBuffer(descriptorSet);
-  input.image()->addImageMemoryBarrierGeneralToShaderRead(
-      computeUnit.commandBuffer());
+  input.image()->addImageMemoryBarrierToShaderRead(computeUnit.commandBuffer());
   computeUnit.dispatchCommandBuffer(OW, OH, C, workGroupSize);
-  computeUnit.runCommandBuffer();
+  computeUnit.endCommandBuffer();
+  computeUnit.submitAndWaitCommandBuffer();
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 }
@@ -127,11 +127,12 @@ void add(
                           workGroupSize};
   computeUnit.createCommandBuffer(descriptorSet);
   auto commandBuffer = computeUnit.commandBuffer();
-  output.image()->addImageMemoryBarrierUndefinedToGeneral(commandBuffer);
-  input0.image()->addImageMemoryBarrierGeneralToShaderRead(commandBuffer);
-  input1.image()->addImageMemoryBarrierGeneralToShaderRead(commandBuffer);
+  output.image()->addImageMemoryBarrierToGeneral(commandBuffer);
+  input0.image()->addImageMemoryBarrierToShaderRead(commandBuffer);
+  input1.image()->addImageMemoryBarrierToShaderRead(commandBuffer);
   computeUnit.dispatchCommandBuffer(W, H, C, workGroupSize);
-  computeUnit.runCommandBuffer();
+  computeUnit.endCommandBuffer();
+  computeUnit.submitAndWaitCommandBuffer();
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 }
@@ -146,9 +147,7 @@ VBuffer kernelNCHW_OCHW_repack_O4C4HWi4o4(
   const auto C_4 = UP_DIV(C, 4);
   const auto kBufSizeNumel = ALIGN_UP4(OC) * Cau4 * KH * KW;
   auto size = sizeof(float) * kBufSizeNumel;
-  auto sizeAligned =
-      ROUND_UP(size, context().limits().minStorageBufferOffsetAlignment);
-  VBuffer kernelBuffer{sizeAligned};
+  VBuffer kernelBuffer{size};
   const int oc_4SizeNumel = KW * KH * C_4 * 16;
   auto mappedMemory = kernelBuffer.map();
   if (mappedMemory.ptr()) {
@@ -273,11 +272,12 @@ void conv2d_depthwise(
                   workGroupSize};
   computeUnit.createCommandBuffer(descriptorSet);
   auto commandBuffer = computeUnit.commandBuffer();
-  output.image()->addImageMemoryBarrierUndefinedToGeneral(commandBuffer);
-  input.image()->addImageMemoryBarrierGeneralToShaderRead(commandBuffer);
-  kernel.image()->addImageMemoryBarrierGeneralToShaderRead(commandBuffer);
+  output.image()->addImageMemoryBarrierToGeneral(commandBuffer);
+  input.image()->addImageMemoryBarrierToShaderRead(commandBuffer);
+  kernel.image()->addImageMemoryBarrierToShaderRead(commandBuffer);
   computeUnit.dispatchCommandBuffer(c2ds.OW, c2ds.OH, c2ds.OC_4, workGroupSize);
-  computeUnit.runCommandBuffer();
+  computeUnit.endCommandBuffer();
+  computeUnit.submitAndWaitCommandBuffer();
 
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
@@ -298,7 +298,6 @@ void conv2d_prepack_weights_to_image(
     int64_t C,
     int64_t KH,
     int64_t KW) {
-  auto device = context().device();
   auto kernelBuffer = kernelNCHW_OCHW_repack_O4C4HWi4o4(weight, OC, C, KH, KW);
   auto OC_4 = UP_DIV(OC, 4);
   auto C_4 = UP_DIV(C, 4);
@@ -323,7 +322,7 @@ void conv2d_prepack_weights_to_image(
       VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER};
   createDescriptorSetLayoutSinglePool(
-      device,
+      context().device(),
       descriptorTypes,
       &descriptorSetLayout,
       &descriptorPool,
@@ -339,13 +338,20 @@ void conv2d_prepack_weights_to_image(
                           workGroupSize};
   computeUnit.createCommandBuffer(descriptorSet);
   auto commandBuffer = computeUnit.commandBuffer();
-  image.addImageMemoryBarrierUndefinedToGeneral(commandBuffer);
+  image.addImageMemoryBarrierToGeneral(commandBuffer);
   kernelBuffer.addBufferMemoryBarrier(
       commandBuffer, 0, kernelBuffer.sizeBytes());
+  computeUnit.addMemoryBarrier(
+      VK_PIPELINE_STAGE_HOST_BIT,
+      VK_ACCESS_HOST_WRITE_BIT,
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+      VK_ACCESS_SHADER_READ_BIT);
   computeUnit.dispatchCommandBuffer(C_4, OC_4, KH * KW, workGroupSize);
-  computeUnit.runCommandBuffer();
-  vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-  vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+  computeUnit.endCommandBuffer();
+  computeUnit.submitAndWaitCommandBuffer();
+  vkDestroyDescriptorPool(context().device(), descriptorPool, nullptr);
+  vkDestroyDescriptorSetLayout(
+      context().device(), descriptorSetLayout, nullptr);
 }
 
 VImage conv2d_prepack_weights_image(
@@ -432,14 +438,15 @@ void conv2d(
                           workGroupSize};
   computeUnit.createCommandBuffer(descriptorSet);
   auto commandBuffer = computeUnit.commandBuffer();
-  output.image()->addImageMemoryBarrierUndefinedToGeneral(commandBuffer);
-  input.image()->addImageMemoryBarrierGeneralToShaderRead(commandBuffer);
-  kernelImage.addImageMemoryBarrierGeneralToShaderRead(commandBuffer);
+  output.image()->addImageMemoryBarrierToGeneral(commandBuffer);
+  input.image()->addImageMemoryBarrierToShaderRead(commandBuffer);
+  kernelImage.addImageMemoryBarrierToShaderRead(commandBuffer);
   computeUnit.dispatchCommandBuffer(
       UP_DIV(c2ds.OW, 4 * workGroupSize.x),
       UP_DIV(c2ds.OH, workGroupSize.y),
       UP_DIV(c2ds.OC_4, workGroupSize.z));
-  computeUnit.runCommandBuffer();
+  computeUnit.endCommandBuffer();
+  computeUnit.submitAndWaitCommandBuffer();
 
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
@@ -587,10 +594,11 @@ void clamp(
                           workGroupSize};
   computeUnit.createCommandBuffer(descriptorSet);
   auto commandBuffer = computeUnit.commandBuffer();
-  output.image()->addImageMemoryBarrierUndefinedToGeneral(commandBuffer);
-  input.image()->addImageMemoryBarrierGeneralToShaderRead(commandBuffer);
+  output.image()->addImageMemoryBarrierToGeneral(commandBuffer);
+  input.image()->addImageMemoryBarrierToShaderRead(commandBuffer);
   computeUnit.dispatchCommandBuffer(W, H, C, workGroupSize);
-  computeUnit.runCommandBuffer();
+  computeUnit.endCommandBuffer();
+  computeUnit.submitAndWaitCommandBuffer();
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 }
@@ -674,12 +682,13 @@ void addmm(
                           workGroupSize};
   computeUnit.createCommandBuffer(descriptorSet);
   auto commandBuffer = computeUnit.commandBuffer();
-  output.image()->addImageMemoryBarrierUndefinedToGeneral(commandBuffer);
-  m1.image()->addImageMemoryBarrierGeneralToShaderRead(commandBuffer);
-  m2.image()->addImageMemoryBarrierGeneralToShaderRead(commandBuffer);
-  t.image()->addImageMemoryBarrierGeneralToShaderRead(commandBuffer);
+  output.image()->addImageMemoryBarrierToGeneral(commandBuffer);
+  m1.image()->addImageMemoryBarrierToShaderRead(commandBuffer);
+  m2.image()->addImageMemoryBarrierToShaderRead(commandBuffer);
+  t.image()->addImageMemoryBarrierToShaderRead(commandBuffer);
   computeUnit.dispatchCommandBuffer(OW, OH, C_4, workGroupSize);
-  computeUnit.runCommandBuffer();
+  computeUnit.endCommandBuffer();
+  computeUnit.submitAndWaitCommandBuffer();
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 }
@@ -727,10 +736,11 @@ void mean(VulkanTensor& output, const VulkanTensor& input) {
                           workGroupSize};
   computeUnit.createCommandBuffer(descriptorSet);
   auto commandBuffer = computeUnit.commandBuffer();
-  output.image()->addImageMemoryBarrierUndefinedToGeneral(commandBuffer);
-  input.image()->addImageMemoryBarrierGeneralToShaderRead(commandBuffer);
+  output.image()->addImageMemoryBarrierToGeneral(commandBuffer);
+  input.image()->addImageMemoryBarrierToShaderRead(commandBuffer);
   computeUnit.dispatchCommandBuffer(1, 1, C_4, workGroupSize);
-  computeUnit.runCommandBuffer();
+  computeUnit.endCommandBuffer();
+  computeUnit.submitAndWaitCommandBuffer();
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 }

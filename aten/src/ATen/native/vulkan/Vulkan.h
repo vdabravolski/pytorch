@@ -76,7 +76,7 @@ const VContext& context();
 //
 // If image allocated - image data has priority.
 // VulkanTensor::copy_data_to_host checks if image allocated -
-// copy_from_image_to_buffer first.
+// copy_image_to_buffer first.
 class VBuffer;
 class VImage;
 
@@ -182,7 +182,10 @@ class VBuffer final {
         VkDeviceMemory deviceMemory,
         VkDeviceSize offset,
         VkDeviceSize size)
-        : device_(device), deviceMemory_(deviceMemory) {
+        : device_(device),
+          deviceMemory_(deviceMemory),
+          offset_(offset),
+          size_(size) {
       vkMapMemory(device_, deviceMemory_, 0, size, 0, &mappedMemory_);
     }
     ~MapMemory() {
@@ -195,10 +198,14 @@ class VBuffer final {
     inline void* ptr() {
       return mappedMemory_;
     }
+    void flushWriteToHost();
+    void flushWriteToDevice();
 
    private:
     VkDevice device_;
     VkDeviceMemory deviceMemory_;
+    VkDeviceSize offset_;
+    VkDeviceSize size_;
     void* mappedMemory_;
   };
 
@@ -240,7 +247,6 @@ class VBuffer final {
   inline VkDeviceSize sizeBytes() const {
     return bufferSizeBytes_;
   }
-
   void addBufferMemoryBarrier(
       VkCommandBuffer commandBuffer,
       VkDeviceSize offset,
@@ -260,9 +266,6 @@ class VImage final {
   static constexpr VkImageType kImageType = VK_IMAGE_TYPE_3D;
   static constexpr VkFilter kFilter = VK_FILTER_NEAREST;
   static constexpr VkFormat kFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-  static constexpr VkImageLayout kImageLayout = VK_IMAGE_LAYOUT_GENERAL;
-  static constexpr VkImageLayout kImageLayoutInitial =
-      VK_IMAGE_LAYOUT_UNDEFINED;
   static constexpr VkSamplerAddressMode kSamplerAddressMode =
       VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
   static constexpr VkImageViewType kImageViewType = VK_IMAGE_VIEW_TYPE_3D;
@@ -316,12 +319,9 @@ class VImage final {
 
   void addImageMemoryBarrier(
       VkCommandBuffer commandBuffer,
-      VkImageLayout oldLayout,
       VkImageLayout newLayout) const;
-  void addImageMemoryBarrierUndefinedToGeneral(
-      VkCommandBuffer commandBuffer) const;
-  void addImageMemoryBarrierGeneralToShaderRead(
-      VkCommandBuffer commandBuffer) const;
+  void addImageMemoryBarrierToGeneral(VkCommandBuffer commandBuffer) const;
+  void addImageMemoryBarrierToShaderRead(VkCommandBuffer commandBuffer) const;
 
  private:
   ImageSize imageSize_;
@@ -330,12 +330,15 @@ class VImage final {
   VkDeviceMemory imageMemory_;
   VkImageView imageView_;
   VkSampler sampler_;
-
+  mutable VkImageLayout imageLayout_;
 }; // class VImage
 
 void copy_buffer_to_image(const VBuffer& buffer, VImage& image);
 
-void copy_from_image_to_buffer(const VImage& image, VBuffer& buffer);
+void copy_image_to_buffer(
+    const VImage& image,
+    VBuffer& buffer,
+    bool addBufferMemoryBarrierForHost = false);
 
 VkDescriptorSetLayoutBinding descriptorSetLayoutBinding(
     uint32_t binding,
@@ -417,6 +420,11 @@ class ComputeUnit final {
 #endif
 
   void createCommandBuffer(VkDescriptorSet& descriptorSet);
+  void addMemoryBarrier(
+      VkPipelineStageFlags srcStageMask,
+      VkAccessFlags srcAccessMask,
+      VkPipelineStageFlags dstStageMask,
+      VkAccessFlags dstAccessMask);
   void dispatchCommandBuffer(
       uint32_t groupCountX,
       uint32_t groupCountY,
@@ -426,7 +434,8 @@ class ComputeUnit final {
       uint32_t gridY,
       uint32_t gridZ,
       WorkGroupSize workGroupSize);
-  void runCommandBuffer();
+  void submitAndWaitCommandBuffer();
+  void endCommandBuffer();
   inline VkCommandBuffer commandBuffer() {
     return commandBuffer_;
   }

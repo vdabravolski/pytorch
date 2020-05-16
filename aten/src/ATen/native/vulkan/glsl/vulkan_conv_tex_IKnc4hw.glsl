@@ -1,9 +1,9 @@
 #version 450 core
 layout(std430) buffer;
 layout(std430) uniform;
-layout(set = 0, rgba16f, binding = 0) writeonly mediump uniform image3D uOutput;
-layout(set = 0, binding = 1) uniform mediump sampler3D uInput;
-layout(set = 0, binding = 2) uniform mediump sampler3D uKernel;
+layout(set = 0, rgba16f, binding = 0) writeonly highp uniform image3D uOutput;
+layout(set = 0, binding = 1) uniform highp sampler3D uInput;
+layout(set = 0, binding = 2) uniform highp sampler3D uKernel;
 layout(set = 0, binding = 3) readonly buffer bias {
   vec4 data[];
 }

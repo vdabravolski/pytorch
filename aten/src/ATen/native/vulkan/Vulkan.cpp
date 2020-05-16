@@ -48,8 +48,9 @@ VContext::~VContext() {
   if (enableValidationLayers_) {
     auto func = (PFN_vkDestroyDebugReportCallbackEXT)vkGetInstanceProcAddr(
         instance_, "vkDestroyDebugReportCallbackEXT");
-    TORCH_CHECK(func, "Could not load vkDestroyDebugReportCallbackEXT");
-    func(instance_, debugReportCallback_, nullptr);
+    if (func) {
+      func(instance_, debugReportCallback_, nullptr);
+    }
   }
 
   vkDestroyDevice(device_, nullptr);
@@ -292,6 +293,28 @@ uint32_t findMemoryType(
   return -1;
 }
 
+void VBuffer::MapMemory::flushWriteToDevice() {
+  VkMappedMemoryRange range{};
+  range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+  range.memory = deviceMemory_;
+  range.offset = offset_;
+  range.size = size_;
+  range.pNext = nullptr;
+
+  VK_CHECK(vkFlushMappedMemoryRanges(context().device(), 1, &range));
+}
+
+void VBuffer::MapMemory::flushWriteToHost() {
+  VkMappedMemoryRange range{};
+  range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+  range.memory = deviceMemory_;
+  range.offset = offset_;
+  range.size = size_;
+  range.pNext = nullptr;
+
+  VK_CHECK(vkInvalidateMappedMemoryRanges(context().device(), 1, &range));
+}
+
 VBuffer::VBuffer(
     VkDeviceSize bufferSizeBytes,
     VkBufferUsageFlags bufferUsageFlags,
@@ -328,12 +351,14 @@ void VBuffer::copy_from_device_to_host(void* outputData, int64_t size) {
   auto mm = map();
   TORCH_INTERNAL_ASSERT(mm.ptr(), "Vulkan: Failed to map Vulkan Buffer memory");
   ::memcpy(outputData, mm.ptr(), size);
+  mm.flushWriteToHost();
 }
 
 void VBuffer::copy_from_host_to_device(void* data, int64_t size) {
   auto mm = map();
   TORCH_INTERNAL_ASSERT(mm.ptr(), "Vulkan: Failed to map Vulkan Buffer memory");
   ::memcpy(mm.ptr(), data, size);
+  mm.flushWriteToDevice();
 }
 
 void VBuffer::set_zeros() {
@@ -421,12 +446,13 @@ VImage::VImage(ImageSize imageSize, ImageSize dataSize)
   imageInfo.arrayLayers = 1;
   imageInfo.format = kFormat;
   imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-  imageInfo.initialLayout = kImageLayoutInitial;
+  imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   imageInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
   imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
   imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
   imageInfo.pNext = nullptr;
   imageInfo.flags = 0;
+  imageLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 
   VK_CHECK(vkCreateImage(device, &imageInfo, nullptr, &image_));
 
@@ -549,8 +575,12 @@ void VImage::bindStorageImage(VkDescriptorSet descriptorSet, uint32_t binding)
 
 void VImage::addImageMemoryBarrier(
     VkCommandBuffer commandBuffer,
-    VkImageLayout oldLayout,
     VkImageLayout newLayout) const {
+  VkImageLayout oldLayout = imageLayout_;
+  if (oldLayout == newLayout) {
+    return;
+  }
+
   VkImageMemoryBarrier barrier{};
   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
   barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -565,10 +595,13 @@ void VImage::addImageMemoryBarrier(
   barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
   barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
 
+  VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+  VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
   if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
       newLayout == VK_IMAGE_LAYOUT_GENERAL) {
     barrier.srcAccessMask = 0;
     barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
   } else if (
       oldLayout == VK_IMAGE_LAYOUT_GENERAL &&
       newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
@@ -580,13 +613,15 @@ void VImage::addImageMemoryBarrier(
     barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
   } else {
+    std::cout << "VImage Layout transition " << oldLayout << " -> " << newLayout
+              << std::endl;
     TORCH_INTERNAL_ASSERT(
         false, "Vulkan: Unsupported Vulkan Image Layout transition");
   }
   vkCmdPipelineBarrier(
       commandBuffer,
-      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+      srcStageMask,
+      dstStageMask,
       0,
       0,
       nullptr,
@@ -594,20 +629,18 @@ void VImage::addImageMemoryBarrier(
       nullptr,
       1,
       &barrier);
+  imageLayout_ = newLayout;
 }
 
-void VImage::addImageMemoryBarrierUndefinedToGeneral(
+void VImage::addImageMemoryBarrierToGeneral(
     VkCommandBuffer commandBuffer) const {
-  addImageMemoryBarrier(
-      commandBuffer, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+  addImageMemoryBarrier(commandBuffer, VK_IMAGE_LAYOUT_GENERAL);
 }
 
-void VImage::addImageMemoryBarrierGeneralToShaderRead(
+void VImage::addImageMemoryBarrierToShaderRead(
     VkCommandBuffer commandBuffer) const {
   addImageMemoryBarrier(
-      commandBuffer,
-      VK_IMAGE_LAYOUT_GENERAL,
-      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+      commandBuffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
 VkDescriptorSetLayoutBinding descriptorSetLayoutBinding(
@@ -807,11 +840,37 @@ void ComputeUnit::createCommandBuffer(VkDescriptorSet& descriptorSet) {
       nullptr);
 }
 
+void ComputeUnit::addMemoryBarrier(
+    VkPipelineStageFlags srcStageMask,
+    VkAccessFlags srcAccessMask,
+    VkPipelineStageFlags dstStageMask,
+    VkAccessFlags dstAccessMask) {
+  VkMemoryBarrier barrier{};
+  barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+  barrier.pNext = nullptr;
+  barrier.srcAccessMask = srcAccessMask;
+  barrier.dstAccessMask = dstAccessMask;
+  vkCmdPipelineBarrier(
+      commandBuffer_,
+      srcStageMask,
+      dstStageMask,
+      0,
+      1,
+      &barrier,
+      0,
+      nullptr,
+      0,
+      nullptr);
+}
+
 void ComputeUnit::dispatchCommandBuffer(
     uint32_t groupCountX,
     uint32_t groupCountY,
     uint32_t groupCountZ) {
   vkCmdDispatch(commandBuffer_, groupCountX, groupCountY, groupCountZ);
+}
+
+void ComputeUnit::endCommandBuffer() {
   VK_CHECK(vkEndCommandBuffer(commandBuffer_));
 }
 
@@ -826,7 +885,7 @@ void ComputeUnit::dispatchCommandBuffer(
       UP_DIV(gridZ, workGroupSize.z));
 }
 
-void ComputeUnit::runCommandBuffer() {
+void ComputeUnit::submitAndWaitCommandBuffer() {
   VkSubmitInfo submitInfo{};
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   submitInfo.commandBufferCount = 1;
@@ -891,18 +950,27 @@ void copy_buffer_to_image(const VBuffer& buffer, VImage& image) {
                           workGroupSize};
   computeUnit.createCommandBuffer(descrSet);
 
-  image.addImageMemoryBarrierUndefinedToGeneral(computeUnit.commandBuffer());
+  image.addImageMemoryBarrierToGeneral(computeUnit.commandBuffer());
   buffer.addBufferMemoryBarrier(
       computeUnit.commandBuffer(), 0, buffer.sizeBytes());
+  computeUnit.addMemoryBarrier(
+      VK_PIPELINE_STAGE_HOST_BIT,
+      VK_ACCESS_HOST_WRITE_BIT,
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+      VK_ACCESS_SHADER_READ_BIT);
   computeUnit.dispatchCommandBuffer(
       image.w(), image.h(), image.d(), workGroupSize);
-  computeUnit.runCommandBuffer();
+  computeUnit.endCommandBuffer();
+  computeUnit.submitAndWaitCommandBuffer();
 
   vkDestroyDescriptorPool(device, descrPool, nullptr);
   vkDestroyDescriptorSetLayout(device, descrSetLayout, nullptr);
 }
 
-void copyFromImageToBuffer(const VImage& image, VBuffer& buffer) {
+void copy_image_to_buffer(
+    const VImage& image,
+    VBuffer& buffer,
+    bool addBufferMemoryBarrierForHost) {
   auto device = context().device();
   auto physicalDevice = context().physicalDevice();
   TORCH_INTERNAL_ASSERT(
@@ -945,10 +1013,19 @@ void copyFromImageToBuffer(const VImage& image, VBuffer& buffer) {
                           workGroupSize};
 
   computeUnit.createCommandBuffer(descrSet);
-  image.addImageMemoryBarrierGeneralToShaderRead(computeUnit.commandBuffer());
+  image.addImageMemoryBarrierToShaderRead(computeUnit.commandBuffer());
   computeUnit.dispatchCommandBuffer(
       image.w(), image.h(), image.d(), workGroupSize);
-  computeUnit.runCommandBuffer();
+
+  if (addBufferMemoryBarrierForHost) {
+    computeUnit.addMemoryBarrier(
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_ACCESS_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT,
+        VK_ACCESS_HOST_READ_BIT);
+  }
+  computeUnit.endCommandBuffer();
+  computeUnit.submitAndWaitCommandBuffer();
 
   vkDestroyDescriptorPool(device, descrPool, nullptr);
   vkDestroyDescriptorSetLayout(device, descrSetLayout, nullptr);
@@ -1073,7 +1150,10 @@ class VulkanTensor::Impl {
 
   void copy_data_to_host(float* outputData) const {
     if (has_image()) {
-      copyFromImageToBuffer(*image(), *(const_cast<VBuffer*>(buffer())));
+      copy_image_to_buffer(
+          *image(),
+          *(const_cast<VBuffer*>(buffer())),
+          true /* memory barrier for host memory map */);
     }
     buffer_->copy_from_device_to_host(outputData, sizeof(float) * numel_);
   }

@@ -76,8 +76,12 @@ TEST(VulkanTest, conv2dWeightsOnCPU) {
     return;
   auto OC = 2;
   auto C = 3;
-  auto t_in = at::rand({1, C, 3, 3}, at::device(at::kCPU).dtype(at::kFloat));
-  auto t_w = at::rand({OC, C, 2, 2}, at::device(at::kCPU).dtype(at::kFloat));
+  int64_t H = 3;
+  int64_t W = 3;
+  int64_t KH = 2;
+  int64_t KW = 2;
+  auto t_in = at::rand({1, C, H, W}, at::device(at::kCPU).dtype(at::kFloat));
+  auto t_w = at::rand({OC, C, KH, KW}, at::device(at::kCPU).dtype(at::kFloat));
   auto t_b = at::zeros({OC}, at::device(at::kCPU).dtype(at::kFloat));
   auto stride = c10::IntArrayRef{1};
   auto padding = c10::IntArrayRef{0};
@@ -96,7 +100,11 @@ TEST(VulkanTest, conv2dDWWeightsOnCPU) {
     return;
   auto C = 3;
   int64_t groups = C;
-  auto t_in = at::rand({1, C, 3, 3}, at::device(at::kCPU).dtype(at::kFloat));
+  int64_t H = 3;
+  int64_t W = 3;
+  int64_t KH = 2;
+  int64_t KW = 2;
+  auto t_in = at::rand({1, C, H, W}, at::device(at::kCPU).dtype(at::kFloat));
   auto t_w =
       at::rand({groups, 1, 2, 2}, at::device(at::kCPU).dtype(at::kFloat));
   auto t_b = at::zeros({groups}, at::device(at::kCPU).dtype(at::kFloat));
