@@ -27,20 +27,21 @@ void pthreadpool_compute_1d(
           range);
 }
 
+void pthreadpool_parallelize_1d(
+    const pthreadpool_t threadpool,
+    const pthreadpool_function_1d_t function,
+    void* const argument,
+    const size_t range,
+    uint32_t) {
+  pthreadpool_compute_1d(threadpool, function, argument, range);
+}
+
 size_t pthreadpool_get_threads_count(pthreadpool_t threadpool) {
   // The current fix only useful when XNNPACK calls pthreadpool_get_threads_count with nullptr.
   if (threadpool == nullptr) {
     return 1;
   }
   return reinterpret_cast<caffe2::ThreadPool*>(threadpool)->getNumThreads();
-  // TODO: Future fix: If we keep maintaining two different threadpools.
-  // Old C2 and new one for XNNPACK, then the we have two different pthreadpool pointer
-  // types. One is caffe2::Thredpool*, the other is pthreadpool* (pthreadpool_new_if_impl.c)
-  // XNNPACK calls pthreadpool_get_threads_count during op setup using pthreadpool*, and
-  // uses _parallelize_ interface for for actual work.
-  // While NNPACK uses caffe2::Threadpool*.
-  // Thus if pthreadpool_get_threads_count is getting called from XNNPACK we cannot
-  // reinterpret_cast it to ThreadPool. It will seg fault or worse will have unedfined behavior.
 }
 
 pthreadpool_t pthreadpool_create(size_t threads_count) {

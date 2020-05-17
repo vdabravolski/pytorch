@@ -86,7 +86,7 @@ static void compute_2d(void* context_, size_t linear_index) {
 }
 
 void pthreadpool_compute_2d(
-  struct pthreadpool* threadpool,
+  pthreadpool_t threadpool,
   pthreadpool_function_2d_t function,
   void* argument,
   size_t range_i,
