@@ -306,7 +306,7 @@ class VImage final {
   void bindShaderRead(VkDescriptorSet descriptorSet, uint32_t binding) const;
   void bindStorageImage(VkDescriptorSet descriptorSet, uint32_t binding) const;
   inline VkDeviceSize sizeBytes() const {
-    return sizeof(float) * imageSize_[0] * imageSize_[1] * imageSize_[2];
+    return sizeof(float) * dataSize_[0] * dataSize_[1] * dataSize_[2];
   }
 
   inline VkDeviceSize capacityBytes() const {

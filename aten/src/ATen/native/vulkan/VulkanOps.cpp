@@ -143,9 +143,8 @@ VBuffer kernelNCHW_OCHW_repack_O4C4HWi4o4(
     const int C,
     const int KH,
     const int KW) {
-  const auto Cau4 = ALIGN_UP4(C);
   const auto C_4 = UP_DIV(C, 4);
-  const auto kBufSizeNumel = ALIGN_UP4(OC) * Cau4 * KH * KW;
+  const auto kBufSizeNumel = ALIGN_UP4(OC) * ALIGN_UP4(C) * KH * KW;
   auto size = sizeof(float) * kBufSizeNumel;
   VBuffer kernelBuffer{size};
   const int oc_4SizeNumel = KW * KH * C_4 * 16;
@@ -173,6 +172,7 @@ VBuffer kernelNCHW_OCHW_repack_O4C4HWi4o4(
       }
     }
   }
+  mappedMemory.flushWriteToDevice();
   return kernelBuffer;
 }
 
@@ -206,23 +206,14 @@ void conv2d_depthwise(
     VulkanTensor& output,
     const VulkanTensor& input,
     const float* weight,
-    int64_t KH,
-    int64_t KW,
     const c10::optional<float*> bias,
-    int64_t SY,
-    int64_t SX,
-    int64_t PY,
-    int64_t PX,
-    int64_t DY,
-    int64_t DX,
-    int64_t G) {
+    const Conv2DParams params) {
+  TORCH_INTERNAL_ASSERT(params.G == params.C);
   auto osizes = output.sizes();
-  Conv2DParams c2ds{
-      input.sizes(), osizes[1], KH, KW, SY, SX, PY, PX, DY, DX, G};
-  TORCH_INTERNAL_ASSERT(osizes[2] == c2ds.OH);
-  TORCH_INTERNAL_ASSERT(osizes[3] == c2ds.OW);
+  TORCH_INTERNAL_ASSERT(osizes[2] == params.OH);
+  TORCH_INTERNAL_ASSERT(osizes[3] == params.OW);
   auto biasBuffer =
-      bufferFromOptionalHostData(bias, conv2d_biasBufferSize(c2ds.OC));
+      bufferFromOptionalHostData(bias, conv2d_biasBufferSize(params.OC));
   struct ConstBlock {
     int32_t padding[2];
     int32_t kernelSize[2];
@@ -231,15 +222,15 @@ void conv2d_depthwise(
     int32_t inputSize[4];
     int32_t outputSize[4];
   };
-  ConstBlock cb{{c2ds.PX, c2ds.PY},
-                {c2ds.KW, c2ds.KH},
-                {c2ds.SX, c2ds.SY},
-                {c2ds.DX, c2ds.DY},
-                {c2ds.OW, c2ds.OH, c2ds.OC_4, 0},
-                {c2ds.W, c2ds.H, c2ds.C_4, 0}};
+  ConstBlock cb{{params.PX, params.PY},
+                {params.KW, params.KH},
+                {params.SX, params.SY},
+                {params.DX, params.DY},
+                {params.OW, params.OH, params.OC_4, 0},
+                {params.W, params.H, params.C_4, 0}};
   VBuffer constBuffer = makeUniformConstBuffer((void*)&cb, sizeof(cb));
 
-  VulkanTensor kernel{{c2ds.OC, c2ds.KH, c2ds.KW}};
+  VulkanTensor kernel{{params.OC, params.KH, params.KW}};
   kernel.set_data_from_host(weight);
 
   VkDescriptorSetLayout descriptorSetLayout{};
@@ -275,7 +266,8 @@ void conv2d_depthwise(
   output.image()->addImageMemoryBarrierToGeneral(commandBuffer);
   input.image()->addImageMemoryBarrierToShaderRead(commandBuffer);
   kernel.image()->addImageMemoryBarrierToShaderRead(commandBuffer);
-  computeUnit.dispatchCommandBuffer(c2ds.OW, c2ds.OH, c2ds.OC_4, workGroupSize);
+  computeUnit.dispatchCommandBuffer(
+      params.OW, params.OH, params.OC_4, workGroupSize);
   computeUnit.endCommandBuffer();
   computeUnit.submitAndWaitCommandBuffer();
 
@@ -288,7 +280,8 @@ ImageSizes conv2d_prepack_weights_image_sizes(
     int64_t C,
     int64_t KH,
     int64_t KW) {
-  return {{ALIGN_UP4(C), UP_DIV(OC, 4), KH * KW}, {C, OC, KH * KW}};
+  return {{ALIGN_UP4(C), UP_DIV(OC, 4), KH * KW},
+          {ALIGN_UP4(C), UP_DIV(OC, 4), KH * KW}};
 }
 
 void conv2d_prepack_weights_to_image(
@@ -382,15 +375,15 @@ void conv2d(
     const VulkanTensor& input,
     const VImage& kernelImage,
     const VBuffer& biasBuffer,
-    const Conv2DParams& c2ds) {
+    const Conv2DParams& params) {
   TORCH_INTERNAL_ASSERT(
-      c2ds.G == 1, "Prepacked kernel VImage for non-group conv2d only");
+      params.G == 1, "Prepacked kernel VImage for non-group conv2d only");
   auto osizes = output.sizes();
   TORCH_INTERNAL_ASSERT(
-      osizes[2] == c2ds.OH,
+      osizes[2] == params.OH,
       "Output tensor dims do not match specified conv2d params");
   TORCH_INTERNAL_ASSERT(
-      osizes[3] == c2ds.OW,
+      osizes[3] == params.OW,
       "Output tensor dims do not match specified conv2d params");
 
   struct ConstBlock {
@@ -401,12 +394,12 @@ void conv2d(
     int32_t inputSize[4];
     int32_t outputSize[4];
   };
-  ConstBlock cb{{c2ds.PX, c2ds.PY},
-                {c2ds.KW, c2ds.KH},
-                {c2ds.SX, c2ds.SY},
-                {c2ds.DX, c2ds.DY},
-                {c2ds.OW, c2ds.OH, c2ds.OC_4, c2ds.OC},
-                {c2ds.W, c2ds.H, c2ds.C_4, c2ds.C}};
+  ConstBlock cb{{params.PX, params.PY},
+                {params.KW, params.KH},
+                {params.SX, params.SY},
+                {params.DX, params.DY},
+                {params.OW, params.OH, params.OC_4, params.OC},
+                {params.W, params.H, params.C_4, params.C}};
   VBuffer constBuffer = makeUniformConstBuffer((void*)&cb, sizeof(cb));
 
   auto device = context().device();
@@ -432,7 +425,7 @@ void conv2d(
   biasBuffer.bind(descriptorSet, 3);
   constBuffer.bind(descriptorSet, 4);
 
-  WorkGroupSize workGroupSize{1, 1, c2ds.OC_4};
+  WorkGroupSize workGroupSize{1, 1, params.OC_4};
   ComputeUnit computeUnit{at::native::vulkan::GLSL_SPV(vulkan_conv_tex_IKnc4hw),
                           descriptorSetLayout,
                           workGroupSize};
@@ -442,9 +435,9 @@ void conv2d(
   input.image()->addImageMemoryBarrierToShaderRead(commandBuffer);
   kernelImage.addImageMemoryBarrierToShaderRead(commandBuffer);
   computeUnit.dispatchCommandBuffer(
-      UP_DIV(c2ds.OW, 4 * workGroupSize.x),
-      UP_DIV(c2ds.OH, workGroupSize.y),
-      UP_DIV(c2ds.OC_4, workGroupSize.z));
+      UP_DIV(params.OW, 4 * workGroupSize.x),
+      UP_DIV(params.OH, workGroupSize.y),
+      UP_DIV(params.OC_4, workGroupSize.z));
   computeUnit.endCommandBuffer();
   computeUnit.submitAndWaitCommandBuffer();
 
@@ -457,93 +450,56 @@ void conv2d(
     const VulkanTensor& input,
     const VImage& kernelImage,
     const c10::optional<float*> bias,
-    const Conv2DParams& c2ds) {
+    const Conv2DParams& params) {
   TORCH_INTERNAL_ASSERT(
-      c2ds.G == 1, "Prepacked kernel VImage for non-group conv2d only");
+      params.G == 1, "Prepacked kernel VImage for non-group conv2d only");
   conv2d(
       output,
       input,
       kernelImage,
-      bufferFromOptionalHostData(
-          bias, conv2d_biasBufferSize(ALIGN_UP4(c2ds.OC))),
-      c2ds);
+      bufferFromOptionalHostData(bias, conv2d_biasBufferSize(params.OC)),
+      params);
 }
 
 void conv2d(
     VulkanTensor& output,
     const VulkanTensor& input,
     const VulkanTensor& weight_prepacked,
-    int64_t KH,
-    int64_t KW,
     c10::optional<float*> bias,
-    int64_t SY,
-    int64_t SX,
-    int64_t PY,
-    int64_t PX,
-    int64_t DY,
-    int64_t DX,
-    int64_t G) {
-  conv2d(
-      output,
-      input,
-      *(weight_prepacked.image()),
-      bias,
-      Conv2DParams{
-          input.sizes(), output.sizes()[1], KH, KW, SY, SX, PY, PX, DY, DX, G});
+    const Conv2DParams params) {
+  conv2d(output, input, *(weight_prepacked.image()), bias, params);
 }
 
 void conv2d(
     VulkanTensor& output,
     const VulkanTensor& input,
     const VulkanTensor& weight_prepacked,
-    int64_t KH,
-    int64_t KW,
     const VulkanTensor& bias,
-    int64_t SY,
-    int64_t SX,
-    int64_t PY,
-    int64_t PX,
-    int64_t DY,
-    int64_t DX,
-    int64_t G) {
-  conv2d(
-      output,
-      input,
-      *(weight_prepacked.image()),
-      *(bias.buffer()),
-      Conv2DParams{
-          input.sizes(), output.sizes()[1], KH, KW, SY, SX, PY, PX, DY, DX, G});
+    const Conv2DParams params) {
+  conv2d(output, input, *(weight_prepacked.image()), *(bias.buffer()), params);
 }
 
 void conv2d(
     VulkanTensor& output,
     const VulkanTensor& input,
     const float* weight,
-    int64_t KH,
-    int64_t KW,
     const c10::optional<float*> bias,
-    int64_t SY,
-    int64_t SX,
-    int64_t PY,
-    int64_t PX,
-    int64_t DY,
-    int64_t DX,
-    int64_t G) {
-  Conv2DParams c2ds{
-      input.sizes(), output.sizes()[1], KH, KW, SY, SX, PY, PX, DY, DX, G};
-  if (G > 1) {
+    const Conv2DParams params) {
+  if (params.G > 1) {
     TORCH_INTERNAL_ASSERT(
-        G == c2ds.C, "Vulkan conv2d supports only no-group and depthwise");
-    conv2d_depthwise(
-        output, input, weight, KH, KW, bias, SY, SX, PY, PX, DY, DX, G);
+        params.G == params.C,
+        "Vulkan conv2d supports only no-group and depthwise");
+    conv2d_depthwise(output, input, weight, bias, params);
     return;
   }
+
   conv2d(
       output,
       input,
-      conv2d_prepack_weights_image(weight, c2ds.OC, c2ds.C, KH, KW),
+      conv2d_prepack_weights_image(
+          weight, params.OC, params.C, params.KH, params.KW),
       bias,
-      c2ds);
+      params);
 }
 
 void clamp(

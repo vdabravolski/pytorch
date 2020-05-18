@@ -71,7 +71,7 @@ TEST(VulkanTest, add) {
   ASSERT_TRUE(almostEqual(t_out, t_out_expected));
 }
 
-TEST(VulkanTest, conv2dWeightsOnCPU) {
+TEST(VulkanTest, conv2d) {
   if (!at::vulkan::is_available())
     return;
   auto OC = 2;
@@ -92,7 +92,12 @@ TEST(VulkanTest, conv2dWeightsOnCPU) {
   auto tv_in = t_in.vulkan();
   auto tv_out = at::conv2d(tv_in, t_w, t_b, stride, padding, dilation, groups);
   auto t_out = tv_out.cpu();
-  ASSERT_TRUE(almostEqual(t_out, t_out_expected));
+  bool check = almostEqual(t_out, t_out_expected);
+  if (!check) {
+    std::cout << "expected:\n" << t_out_expected << std::endl;
+    std::cout << "got:\n" << t_out << std::endl;
+  }
+  ASSERT_TRUE(check);
 }
 
 TEST(VulkanTest, conv2dDWWeightsOnCPU) {
@@ -476,9 +481,9 @@ TEST(VulkanTest, conv2dPrepack) {
   auto t_in = at::rand({1, C, 3, 3}, at::device(at::kCPU).dtype(at::kFloat));
   auto t_w = at::rand({OC, C, 2, 2}, at::device(at::kCPU).dtype(at::kFloat));
   auto t_b = at::zeros({OC}, at::device(at::kCPU).dtype(at::kFloat));
-  auto stride = c10::IntArrayRef{1, 1};
-  auto padding = c10::IntArrayRef{0, 0};
-  auto dilation = c10::IntArrayRef{1, 1};
+  auto stride = c10::IntArrayRef{1};
+  auto padding = c10::IntArrayRef{0};
+  auto dilation = c10::IntArrayRef{1};
   float output_min = -10;
   float output_max = 10;
 
@@ -486,8 +491,14 @@ TEST(VulkanTest, conv2dPrepack) {
       at::conv2d(t_in, t_w, t_b, stride, padding, dilation, groups);
   auto tv_in = t_in.vulkan();
   auto tv_out = at::conv2d(tv_in, t_w, t_b, stride, padding, dilation, groups);
+
   auto t_out = tv_out.cpu();
-  ASSERT_TRUE(almostEqual(t_out, t_out_expected));
+  bool no_prepack_check = almostEqual(t_out, t_out_expected);
+  if (!no_prepack_check) {
+    std::cout << "t_out_expected:\n" << t_out_expected << std::endl;
+    std::cout << "t_out:\n" << t_out << std::endl;
+  }
+  ASSERT_TRUE(no_prepack_check);
 
   auto prepack = callOpByName(
       "vulkan::conv2d_clamp_prepack",
@@ -504,5 +515,10 @@ TEST(VulkanTest, conv2dPrepack) {
       callOpByName("vulkan::conv2d_clamp_run", "", tv_in, prepack[0]);
   auto tv_out_prepack = tv_out_prepack_ivalues[0].toTensor();
   auto t_out_prepack = tv_out_prepack.cpu();
-  ASSERT_TRUE(almostEqual(t_out_prepack, t_out_expected));
+  const auto prepack_check = almostEqual(t_out_prepack, t_out_expected);
+  if (!prepack_check) {
+    std::cout << "expected:\n" << t_out_expected << std::endl;
+    std::cout << "got:\n" << t_out_prepack << std::endl;
+  }
+  ASSERT_TRUE(prepack_check);
 }

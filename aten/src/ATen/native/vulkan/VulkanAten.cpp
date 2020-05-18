@@ -168,67 +168,28 @@ at::Tensor vulkan_convolution(
     IntArrayRef stride,
     IntArrayRef dilation,
     int64_t groups) {
-  auto isizes = input.sizes();
+  vulkan::Conv2DParams params{
+      input.sizes(), weight.sizes(), padding, stride, dilation, groups};
   TORCH_INTERNAL_ASSERT(
-      isizes.size() == 4, "vulkan_convolution: Expected 4-dimensional input");
-  auto wsizes = weight.sizes();
+      input.dim() == 4, "vulkan_convolution: Expected 4-dimensional input");
   TORCH_INTERNAL_ASSERT(
-      wsizes.size() == 4, "vulkan_convolution: Expected 4-dimensional weight");
-  int64_t C = isizes[1];
+      weight.dim() == 4, "vulkan_convolution: Expected 4-dimensional weight");
   TORCH_INTERNAL_ASSERT(
-      groups == 1 || groups == C,
+      groups == 1 || groups == params.C,
       "vulkan_convolution: only nogroup or depthwise convolutions supported");
 
-  int64_t N = isizes[0];
-  int64_t H = isizes[2];
-  int64_t W = isizes[3];
-
-  int64_t OC = wsizes[0];
-  int64_t KH = wsizes[2];
-  int64_t KW = wsizes[3];
-
-  int64_t PY = padding[0];
-  int64_t PX = padding[1];
-
-  int64_t SY = stride[0];
-  int64_t SX = stride[1];
-
-  int64_t DY = dilation[0];
-  int64_t DX = dilation[1];
-
-  const int KWE = (KW - 1) * DX + 1;
-  const int KHE = (KH - 1) * DY + 1;
-  const int64_t OW = ((W - KWE + 2 * PX) / SX) + 1;
-  const int64_t OH = ((H - KHE + 2 * PY) / SY) + 1;
-
-  auto osizes = std::vector<int64_t>{N, OC, OH, OW};
-
   const VTensor& vinput = vtensor_from_vulkan(input);
-  VTensor voutput = VTensor{osizes};
+  VTensor voutput = VTensor{params.output_sizes()};
   voutput.allocate_storage();
 
-  float* biasData{};
-  if (bias.defined()) {
-    biasData = bias.template data_ptr<float>();
-  } else {
-    biasData = (float*)std::malloc(sizeof(float) * OC);
-    std::memset(biasData, 0, sizeof(float) * OC);
-  }
-  float* weightData = weight.template data_ptr<float>();
   at::native::vulkan::details::VULKAN_GL::conv2d(
       voutput,
       vinput,
-      weightData,
-      KH,
-      KW,
-      biasData,
-      SY,
-      SX,
-      PY,
-      PX,
-      DY,
-      DX,
-      groups);
+      weight.template data_ptr<float>(),
+      bias.defined()
+          ? c10::make_optional<float*>(bias.template data_ptr<float>())
+          : c10::nullopt,
+      params);
   return new_with_vtensor_vulkan(std::move(voutput), input.options());
 }
 
@@ -242,76 +203,52 @@ at::Tensor vulkan_convolution_prepack_weights(const at::Tensor& weight) {
   const int64_t C = wsizes[1];
   const int64_t KH = wsizes[2];
   const int64_t KW = wsizes[3];
-  VTensor voutput = VTensor{{OC, C, KH, KW}};
+  VTensor voutput = VTensor{{UP_DIV(OC, 4), UP_DIV(C, 4), KH * KW, 16}};
   voutput.allocate_storage();
 
   at::native::vulkan::details::VULKAN_GL::conv2d_prepack_weights(
       voutput, weight.template data_ptr<float>(), OC, C, KH, KW);
   return new_with_vtensor_vulkan(
-      std::move(voutput), at::device(at::kCPU).dtype(at::kFloat));
+      std::move(voutput), at::device(at::kVulkan).dtype(at::kFloat));
 }
 
 at::Tensor vulkan_convolution_prepacked(
     const at::Tensor& input, // Vulkan
+    IntArrayRef weightSizes,
     const at::Tensor& weight_prepacked_vulkan, // Vulkan
     const c10::optional<at::Tensor>& bias, // Vulkan|CPU
     IntArrayRef padding,
     IntArrayRef stride,
     IntArrayRef dilation,
     int64_t groups) {
-  auto isizes = input.sizes();
   TORCH_INTERNAL_ASSERT(
-      isizes.size() == 4, "vulkan_convolution: Expected 4-dimensional input");
-  auto wsizes = weight_prepacked_vulkan.sizes();
+      input.dim() == 4, "vulkan_convolution: Expected 4-dimensional input");
   TORCH_INTERNAL_ASSERT(
-      wsizes.size() == 4, "vulkan_convolution: Expected 4-dimensional weight");
-  vulkan::Conv2DParams c2ds{input.sizes(),
-                            weight_prepacked_vulkan.sizes(),
-                            padding,
-                            stride,
-                            dilation,
-                            groups};
+      weight_prepacked_vulkan.dim() == 4,
+      "vulkan_convolution: Expected 4-dimensional weight");
+  vulkan::Conv2DParams params{
+      input.sizes(), weightSizes, padding, stride, dilation, groups};
   TORCH_INTERNAL_ASSERT(
-      groups == 1 || groups == c2ds.C,
+      groups == 1 || groups == params.C,
       "vulkan_convolution: only nogroup or depthwise convolutions supported");
   const VTensor& vinput = vtensor_from_vulkan(input);
   const VTensor& vweight = vtensor_from_vulkan(weight_prepacked_vulkan);
-  VTensor voutput = VTensor{{c2ds.N, c2ds.OC, c2ds.OH, c2ds.OW}};
+  VTensor voutput = VTensor{{params.N, params.OC, params.OH, params.OW}};
   voutput.allocate_storage();
   const bool hasBias = bias.has_value() && (*bias).defined();
   const bool vulkanBias = (*bias).is_vulkan();
   if (hasBias && vulkanBias) {
     const VTensor& vbias = vtensor_from_vulkan(*bias);
     at::native::vulkan::details::VULKAN_GL::conv2d(
-        voutput,
-        vinput,
-        vweight,
-        c2ds.KH,
-        c2ds.KW,
-        vbias,
-        c2ds.SY,
-        c2ds.SX,
-        c2ds.PY,
-        c2ds.PX,
-        c2ds.DY,
-        c2ds.DX,
-        groups);
+        voutput, vinput, vweight, vbias, params);
   } else {
     at::native::vulkan::details::VULKAN_GL::conv2d(
         voutput,
         vinput,
         vweight,
-        c2ds.KH,
-        c2ds.KW,
         hasBias ? c10::make_optional((*bias).template data_ptr<float>())
                 : c10::nullopt,
-        c2ds.SY,
-        c2ds.SX,
-        c2ds.PY,
-        c2ds.PX,
-        c2ds.DY,
-        c2ds.DX,
-        groups);
+        params);
   }
   return new_with_vtensor_vulkan(std::move(voutput), input.options());
 }

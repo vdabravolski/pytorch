@@ -37,46 +37,22 @@ void conv2d(
     VulkanTensor& output,
     const VulkanTensor& input,
     const float* weight,
-    int64_t KH,
-    int64_t KW,
     const c10::optional<float*> bias,
-    int64_t SY,
-    int64_t SX,
-    int64_t PY,
-    int64_t PX,
-    int64_t DY,
-    int64_t DX,
-    int64_t G);
+    const Conv2DParams params);
 
 void conv2d(
     VulkanTensor& output,
     const VulkanTensor& input,
     const VulkanTensor& weight_prepacked,
-    int64_t KH,
-    int64_t KW,
     const c10::optional<float*> bias,
-    int64_t SY,
-    int64_t SX,
-    int64_t PY,
-    int64_t PX,
-    int64_t DY,
-    int64_t DX,
-    int64_t G);
+    const Conv2DParams params);
 
 void conv2d(
     VulkanTensor& output,
     const VulkanTensor& input,
     const VulkanTensor& weight_prepacked,
-    int64_t KH,
-    int64_t KW,
     const VulkanTensor& bias,
-    int64_t SY,
-    int64_t SX,
-    int64_t PY,
-    int64_t PX,
-    int64_t DY,
-    int64_t DX,
-    int64_t G);
+    const Conv2DParams params);
 
 void clamp(
     VulkanTensor& output,

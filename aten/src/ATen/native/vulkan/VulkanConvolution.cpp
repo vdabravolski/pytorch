@@ -83,6 +83,7 @@ ContextConv2D create(
 Tensor run(const ContextConv2D& context, const Tensor& input) {
   return at::native::vulkan_convolution_prepacked(
       input,
+      context.weight_size_,
       context.weight_prepacked_vulkan_,
       context.bias_vulkan_,
       context.padding_,

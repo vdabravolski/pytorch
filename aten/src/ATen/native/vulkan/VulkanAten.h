@@ -20,6 +20,7 @@ at::Tensor vulkan_convolution_prepack_weights(const at::Tensor& weight);
 
 at::Tensor vulkan_convolution_prepacked(
     const at::Tensor& input, // Vulkan
+    IntArrayRef weightSizes,
     const at::Tensor& weight_prepacked_vulkan, // Vulkan
     const c10::optional<at::Tensor>& bias, // Vulkan|CPU
     IntArrayRef padding,

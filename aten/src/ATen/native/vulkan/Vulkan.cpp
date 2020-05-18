@@ -1125,6 +1125,7 @@ class VulkanTensor::Impl {
 
   void allocate_storage() {
     auto bufferSize = sizeof(float) * numel_;
+    // alignment to be able to copy between image and buffer
     const auto d = dim();
     if (d == 4) {
       bufferSize = sizeof(float) * ALIGN_UP4(sizes_[0] * sizes_[1]) *
@@ -1136,9 +1137,7 @@ class VulkanTensor::Impl {
     } else if (d == 1) {
       bufferSize = sizeof(float) * 4 * sizes_[0];
     }
-    const auto bufferSizeAligned = ROUND_UP(
-        bufferSize, context().limits().minStorageBufferOffsetAlignment);
-    buffer_ = std::make_unique<VBuffer>(bufferSizeAligned);
+    buffer_ = std::make_unique<VBuffer>(bufferSize);
   }
 
   void set_data_from_host(const float* inputData) {
