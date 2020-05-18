@@ -22,9 +22,9 @@ struct Conv2DParams final {
   int64_t SY; // stride y (height)
   int64_t SX; // stride x (width)
   int64_t PY; // padding y (height)
-  int64_t PX; // padding y (height)
+  int64_t PX; // padding x (width)
   int64_t DY; // dilation y (height)
-  int64_t DX; // dilation y (height)
+  int64_t DX; // dilation x (width)
   int64_t G; // groups
   int64_t OW; // output width
   int64_t OH; // output height
