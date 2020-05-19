@@ -191,9 +191,7 @@ VBuffer bufferFromOptionalHostData(
 }
 
 VBuffer bufferZeros(const uint32_t size) {
-  const auto sizeAligned =
-      ROUND_UP(size, context().limits().minStorageBufferOffsetAlignment);
-  VBuffer buffer{sizeAligned};
+  VBuffer buffer{size};
   buffer.set_zeros();
   return buffer;
 }

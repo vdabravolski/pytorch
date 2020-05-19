@@ -173,6 +173,15 @@ class GLBuffer {
     GL_CHECK_ERROR;
   }
 
+  void set_zeros() {
+    float* bufferDataPtr = (float*)map(GL_MAP_READ_BIT);
+    if (!bufferDataPtr) {
+      TORCH_INTERNAL_ASSERT(false);
+    }
+    memset(bufferDataPtr, 0, size_);
+    unmap();
+  }
+
   buffer_size_t size() const {
     return size_;
   }
@@ -182,47 +191,36 @@ class GLBuffer {
     GL_CHECK_ERROR;
   }
 
-  std::unique_ptr<GLBuffer> static from(
+  void copy_from_host_to_device(
       const float* data,
       GLsizeiptr size,
       size_t sizeCopy) {
-    auto buffer = std::make_unique<GLBuffer>(size);
     float* bufferDataPtr =
-        (float*)(buffer->map(GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT));
+        (float*)map(GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
     if (!bufferDataPtr) {
       TORCH_INTERNAL_ASSERT(false);
     }
     memset(bufferDataPtr, 0, size);
     memcpy(bufferDataPtr, data, sizeCopy);
-    buffer->unmap();
+    unmap();
+  }
+
+  void copy_from_device_to_host(float* outputDataPtr, size_t size) {
+    const float* bufferDataPtr = (const float*)map(GL_MAP_READ_BIT);
+    if (!bufferDataPtr) {
+      TORCH_INTERNAL_ASSERT(false);
+    }
+    memcpy(outputDataPtr, bufferDataPtr, size);
+    unmap();
+  }
+
+  static GLBuffer from(
+      const float* data,
+      buffer_size_t size,
+      buffer_size_t sizeCopy) {
+    GLBuffer buffer{size};
+    buffer.copy_from_host_to_device(data, size, sizeCopy);
     return buffer;
-  }
-
-  std::unique_ptr<GLBuffer> static from(const float* data, buffer_size_t size) {
-    return from(data, size, size);
-  }
-
-  auto copyToHostVec() {
-    int64_t n = size_ / sizeof(float);
-    std::vector<float> ret(n);
-    float* retDataPtr = ret.data();
-    const float* bufferDataPtr = (const float*)map(GL_MAP_READ_BIT);
-    if (!bufferDataPtr) {
-      TORCH_INTERNAL_ASSERT(false);
-    }
-    memset(retDataPtr, 0, n);
-    memcpy(retDataPtr, bufferDataPtr, size_);
-    unmap();
-    return ret;
-  }
-
-  void copyToHost(float* outputDataPtr, size_t sizeCopy) {
-    const float* bufferDataPtr = (const float*)map(GL_MAP_READ_BIT);
-    if (!bufferDataPtr) {
-      TORCH_INTERNAL_ASSERT(false);
-    }
-    memcpy(outputDataPtr, bufferDataPtr, sizeCopy);
-    unmap();
   }
 
  private:
@@ -395,17 +393,6 @@ void wait() {
 
 void compute(GLuint dim0, GLuint dim1, GLuint dim2) {
   glDispatchCompute(dim0, dim1, dim2);
-}
-
-void compute(
-    GLuint dim0,
-    GLuint dim1,
-    GLuint dim2,
-    const char* log,
-    int compGroupSize0,
-    int compGroupSize1,
-    int compGroupSize2) {
-  compute(dim0, dim1, dim2);
   glFinish();
 }
 
@@ -434,7 +421,6 @@ std::unique_ptr<GLShader> createShader(
 }
 
 std::shared_ptr<GLShader> getShader(
-    const std::string& key,
     const char* content,
     const std::vector<std::string>& prefix = {}) {
   std::shared_ptr<GLShader> shader{createShader(content, prefix)};
@@ -491,19 +477,18 @@ void hostCHW_to_deviceTex(
   GLsizeiptr size = ROUND_UP(C, 4) * W * H * sizeof(float);
   auto buffer = GLBuffer::from(inputData, size, C * H * W * sizeof(float));
 
-  auto shader = getShader(
-      "nchw_buf_to_tex_glsl", at::native::vulkan::nchw_buf_to_tex_glsl);
+  auto shader = getShader(at::native::vulkan::nchw_buf_to_tex_glsl);
   shader->useProgram();
 
   bindImageTexInProgram(texId, 0 /* unit */);
   GL_CHECK_ERROR;
 
-  buffer->bindInProgram(1);
+  buffer.bindInProgram(1);
   glUniform1i(2, W);
   glUniform1i(3, H);
   GL_CHECK_ERROR;
 
-  compute(UP_DIV(W, 8), UP_DIV(H, 8), C_4, "hCHW2dTex", 8, 8, 1);
+  compute(UP_DIV(W, 8), UP_DIV(H, 8), C_4);
   GL_CHECK_ERROR;
 }
 
@@ -516,8 +501,7 @@ void deviceTex2hostCHW(
   auto d2_4 = UP_DIV(d2, 4);
   auto size = d2_4 * 4 * d0 * d1 * sizeof(float);
   auto buffer = std::make_unique<GLBuffer>(size);
-  auto program = getShader(
-      "tex_to_nchw_buf_glsl", at::native::vulkan::tex_to_nchw_buf_glsl);
+  auto program = getShader(at::native::vulkan::tex_to_nchw_buf_glsl);
   program->useProgram();
 
   bindImageTexInProgram(texId, 0 /* unit */);
@@ -528,7 +512,7 @@ void deviceTex2hostCHW(
   glUniform1i(3, d1);
   GL_CHECK_ERROR;
 
-  compute(UP_DIV(d0, 8), UP_DIV(d1, 8), d2_4, "dTex2hCHW", 8, 8, 1);
+  compute(UP_DIV(d0, 8), UP_DIV(d1, 8), d2_4);
   GL_CHECK_ERROR;
 
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -558,9 +542,7 @@ void upsample_nearest2d(
   int compGroupSize[3];
   std::vector<std::string> header;
   addCompGroupSizeDefines(header, compGroupSize, 8, 8, 1);
-  auto shaderKey = "upsampleNearest2d_glsl";
-  auto program =
-      getShader(shaderKey, at::native::vulkan::upsampleNearest2d_glsl, header);
+  auto program = getShader(at::native::vulkan::upsampleNearest2d_glsl, header);
 
   program->useProgram();
   bindImageTexInProgram(output.texId(), 0 /* unit */);
@@ -576,11 +558,7 @@ void upsample_nearest2d(
   compute(
       UP_DIV(OW, compGroupSize[0]),
       UP_DIV(OH, compGroupSize[1]),
-      UP_DIV(C_4, compGroupSize[2]),
-      shaderKey,
-      compGroupSize[0],
-      compGroupSize[1],
-      compGroupSize[2]);
+      UP_DIV(C_4, compGroupSize[2]));
   GL_CHECK_ERROR;
 }
 
@@ -599,8 +577,7 @@ void add(
   std::vector<std::string> prefix;
   addCompGroupSizeDefines(prefix, compGroupSize, 8, 8, 1);
 
-  auto shaderKey = "add_glsl";
-  auto addProgram = getShader(shaderKey, at::native::vulkan::add_glsl, prefix);
+  auto addProgram = getShader(at::native::vulkan::add_glsl, prefix);
   addProgram->useProgram();
 
   bindImageTexInProgram(output.texId(), 0 /* unit */);
@@ -614,11 +591,7 @@ void add(
   compute(
       UP_DIV(W, compGroupSize[0]),
       UP_DIV(H, compGroupSize[1]),
-      UP_DIV(C_4, compGroupSize[2]),
-      shaderKey,
-      compGroupSize[0],
-      compGroupSize[1],
-      compGroupSize[2]);
+      UP_DIV(C_4, compGroupSize[2]));
   GL_CHECK_ERROR;
 }
 
@@ -633,17 +606,17 @@ void conv2d_prepack_weights(
       false, "conv2d prepack weights not implemented for GLES");
 }
 
-auto kernelNCHW_OCHW_repack_O4C4HWi4o4(
+GLBuffer kernelNCHW_OCHW_repack_O4C4HWi4o4(
     const float* weights,
     const int OC,
     const int C,
     const int KH,
     const int KW) {
   const uint32_t kBufSizeNumel = ALIGN_UP4(OC) * ALIGN_UP4(C) * KH * KW;
-  auto kernelBuf = std::make_unique<GLBuffer>(sizeof(float) * kBufSizeNumel);
+  GLBuffer kernelBuf{sizeof(float) * kBufSizeNumel};
   const int oc_4SizeNumel = UP_DIV(C, 4) * KW * KH * 16;
   float* kernelPtr =
-      (float*)(kernelBuf->map(GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT));
+      (float*)(kernelBuf.map(GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT));
   if (kernelPtr) {
     memset(kernelPtr, 0, sizeof(float) * kBufSizeNumel);
     const float* src = weights;
@@ -667,11 +640,11 @@ auto kernelNCHW_OCHW_repack_O4C4HWi4o4(
       }
     }
   }
-  kernelBuf->unmap();
+  kernelBuf.unmap();
   return kernelBuf;
 }
 
-std::unique_ptr<GLImage> conv2d_kernel_tex_from_hostCHW(
+GLImage conv2d_kernel_image_from_hostCHW(
     const float* data,
     int64_t OC,
     int64_t C,
@@ -682,102 +655,87 @@ std::unique_ptr<GLImage> conv2d_kernel_tex_from_hostCHW(
   auto OC_4 = UP_DIV(OC, 4);
   auto C_4 = UP_DIV(C, 4);
 
-  auto kernelOutTex =
-      std::make_unique<GLImage>(C_4 * 4, OC_4, KH * KW, getTexFormat());
+  GLImage kernelImage{C_4 * 4, OC_4, KH * KW, getTexFormat()};
 
-  auto p =
-      getShader("KO4C4HW_to_tex_glsl", at::native::vulkan::KO4C4HW_to_tex_glsl);
+  auto p = getShader(at::native::vulkan::KO4C4HW_to_tex_glsl);
   p->useProgram();
-  bindImageTexInProgram(kernelOutTex->id(), 0 /* unit */);
-  kernelBuf->bindInProgram(2);
+  bindImageTexInProgram(kernelImage.id(), 0 /* unit */);
+  kernelBuf.bindInProgram(2);
   glUniform1i(3, KW * KH);
   glUniform1i(4, C_4);
   GL_CHECK_ERROR;
 
-  compute(C_4, OC_4, KH * KW, "hK2dTex", 1, 1, 1);
+  compute(C_4, OC_4, KH * KW);
   GL_CHECK_ERROR;
-  return kernelOutTex;
+  return kernelImage;
+}
+
+GLBuffer bufferFromOptionalHostData(
+    c10::optional<float*> data,
+    const uint32_t size) {
+  GLBuffer buffer{size};
+  if (data.has_value()) {
+    buffer.copy_from_host_to_device(*data, size, size);
+  } else {
+    buffer.set_zeros();
+  }
+  return buffer;
+}
+
+uint32_t conv2d_biasBufferSize(uint32_t oc) {
+  return sizeof(float) * ALIGN_UP4(oc);
 }
 
 void conv2d(
     GLTensor& output,
     const GLTensor& input,
     const float* weight,
-    int64_t KH,
-    int64_t KW,
-    const float* bias,
-    int64_t SY,
-    int64_t SX,
-    int64_t PY,
-    int64_t PX,
-    int64_t DY,
-    int64_t DX,
-    int64_t G) {
+    const c10::optional<float*> bias,
+    const Conv2DParams params) {
   auto osizes = output.sizes();
-  Conv2DParams c2ds{
-      input.sizes(), osizes[1], KH, KW, SY, SX, PY, PX, DY, DX, G};
-  TORCH_INTERNAL_ASSERT(osizes[2] == c2ds.OH);
-  TORCH_INTERNAL_ASSERT(osizes[3] == c2ds.OW);
+  TORCH_INTERNAL_ASSERT(osizes[2] == params.OH);
+  TORCH_INTERNAL_ASSERT(osizes[3] == params.OW);
 
-  auto biasBuf = GLBuffer::from(
-      bias, sizeof(float) * ALIGN_UP4(c2ds.OC), sizeof(float) * c2ds.OC);
-
-  auto kernelTex =
-      conv2d_kernel_tex_from_hostCHW(weight, c2ds.OC, c2ds.C, c2ds.KH, c2ds.KW);
+  auto biasBuf =
+      bufferFromOptionalHostData(bias, conv2d_biasBufferSize(params.OC));
+  auto kernelImage = conv2d_kernel_image_from_hostCHW(
+      weight, params.OC, params.C, params.KH, params.KW);
 
   int compGroupSize[3];
   std::vector<std::string> header;
-  addCompGroupSizeDefines(header, compGroupSize, 1, 1, c2ds.OC_4);
+  addCompGroupSizeDefines(header, compGroupSize, 1, 1, params.OC_4);
 
-  auto shaderKey = "conv_tex_IKnc4hw_glsl";
-  auto convProgram =
-      getShader(shaderKey, at::native::vulkan::conv_tex_IKnc4hw_glsl, header);
+  auto shader = getShader(at::native::vulkan::conv_tex_IKnc4hw_glsl, header);
 
-  convProgram->useProgram();
+  shader->useProgram();
   GL_CHECK_ERROR;
   bindImageTexInProgram(output.texId(), 0 /* unit */);
   bindTexInProgram(input.texId(), 0, 1 /* binding */);
-  bindTexInProgram(kernelTex->id(), 1, 2 /* binding */);
-  biasBuf->bindInProgram(3);
+  bindTexInProgram(kernelImage.id(), 1, 2 /* binding */);
+  biasBuf.bindInProgram(3);
   GL_CHECK_ERROR;
 
-  glUniform2i(4, PX, PY);
-  glUniform2i(5, KW, KH);
-  glUniform2i(6, SX, SY);
-  glUniform2i(7, DX, DY);
-  glUniform3i(8, c2ds.OW, c2ds.OH, c2ds.OC_4);
-  glUniform3i(9, c2ds.W, c2ds.H, c2ds.C_4);
+  glUniform2i(4, params.PX, params.PY);
+  glUniform2i(5, params.KW, params.KH);
+  glUniform2i(6, params.SX, params.SY);
+  glUniform2i(7, params.DX, params.DY);
+  glUniform3i(8, params.OW, params.OH, params.OC_4);
+  glUniform3i(9, params.W, params.H, params.C_4);
   GL_CHECK_ERROR;
 
   compute(
-      UP_DIV(c2ds.OW, 4 * compGroupSize[0]),
-      UP_DIV(c2ds.OH, compGroupSize[1]),
-      UP_DIV(c2ds.OC_4, compGroupSize[2]),
-      "conv_tex",
-      compGroupSize[0],
-      compGroupSize[1],
-      compGroupSize[2]);
+      UP_DIV(params.OW, 4 * compGroupSize[0]),
+      UP_DIV(params.OH, compGroupSize[1]),
+      UP_DIV(params.OC_4, compGroupSize[2]));
   GL_CHECK_ERROR;
-}
-
-void clamp(GLTensor& output, const GLTensor& input, float min, float max) {
-  TORCH_INTERNAL_ASSERT(false, "clamp not implemented for GLES");
 }
 
 void conv2d(
     GLTensor& output,
     const GLTensor& input,
     const GLTensor& weight_prepacked,
-    int64_t KH,
-    int64_t KW,
     const c10::optional<float*> bias,
-    int64_t SY,
-    int64_t SX,
-    int64_t PY,
-    int64_t PX,
-    int64_t DY,
-    int64_t DX,
-    int64_t G) {
+    const Conv2DParams params) {
   TORCH_INTERNAL_ASSERT(
       false, "conv2d with prepacked weight is not implemented for GLES");
 }
@@ -786,19 +744,15 @@ void conv2d(
     GLTensor& output,
     const GLTensor& input,
     const GLTensor& weight_prepacked,
-    int64_t KH,
-    int64_t KW,
     const GLTensor& bias,
-    int64_t SY,
-    int64_t SX,
-    int64_t PY,
-    int64_t PX,
-    int64_t DY,
-    int64_t DX,
-    int64_t G) {
+    const Conv2DParams params) {
   TORCH_INTERNAL_ASSERT(
       false,
       "conv2d with prepacked weight and bias is not implemented for GLES");
+}
+
+void clamp(GLTensor& output, const GLTensor& input, float min, float max) {
+  TORCH_INTERNAL_ASSERT(false, "clamp not implemented for GLES");
 }
 
 void addmm(

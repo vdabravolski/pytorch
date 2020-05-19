@@ -55,10 +55,12 @@ class GLTensor {
 
 class GLImage {
  public:
-  ~GLImage();
   GLImage(int w, int h, int d, GLenum texFormat);
+  ~GLImage();
   GLImage(const GLImage&) = delete;
   GLImage& operator=(const GLImage&) = delete;
+  GLImage(GLImage&&) = default;
+  GLImage& operator=(GLImage&&) = default;
 
   unsigned int id() const;
 
@@ -101,46 +103,22 @@ void conv2d(
     GLTensor& output,
     const GLTensor& input,
     const float* weight,
-    int64_t KH,
-    int64_t KW,
-    const float* bias,
-    int64_t SY,
-    int64_t SX,
-    int64_t PY,
-    int64_t PX,
-    int64_t DY,
-    int64_t DX,
-    int64_t G);
-
-void conv2d(
-    GLTensor& output,
-    const GLTensor& input,
-    const GLTensor& weight_prepacked,
-    int64_t KH,
-    int64_t KW,
     const c10::optional<float*> bias,
-    int64_t SY,
-    int64_t SX,
-    int64_t PY,
-    int64_t PX,
-    int64_t DY,
-    int64_t DX,
-    int64_t G);
+    const Conv2DParams params);
 
 void conv2d(
     GLTensor& output,
     const GLTensor& input,
     const GLTensor& weight_prepacked,
-    int64_t KH,
-    int64_t KW,
+    const c10::optional<float*> bias,
+    const Conv2DParams params);
+
+void conv2d(
+    GLTensor& output,
+    const GLTensor& input,
+    const GLTensor& weight_prepacked,
     const GLTensor& bias,
-    int64_t SY,
-    int64_t SX,
-    int64_t PY,
-    int64_t PX,
-    int64_t DY,
-    int64_t DX,
-    int64_t G);
+    const Conv2DParams params);
 
 void clamp(GLTensor& output, const GLTensor& input, float min, float max);
 

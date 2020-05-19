@@ -904,9 +904,7 @@ void ComputeUnit::submitAndWaitCommandBuffer() {
 }
 
 VBuffer makeUniformConstBuffer(void* ptr, VkDeviceSize size) {
-  auto sizeAligned =
-      ROUND_UP(size, context().limits().minUniformBufferOffsetAlignment);
-  VBuffer constBuffer = VBuffer::makeUniformBuffer(sizeAligned);
+  VBuffer constBuffer = VBuffer::makeUniformBuffer(size);
   constBuffer.copy_from_host_to_device(ptr, size);
   return constBuffer;
 }

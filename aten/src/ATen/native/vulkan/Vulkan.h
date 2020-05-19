@@ -1,6 +1,7 @@
 #pragma once
 
 #include <c10/util/Optional.h>
+#include <array>
 #include <cstring>
 #include <memory>
 #include <vector>
