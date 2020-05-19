@@ -748,6 +748,7 @@ if __name__ == '__main__':
         install_requires=install_requires,
         package_data={
             'torch': [
+                'distributed/nn/jit/templates/remote_module.py.template',
                 'py.typed',
                 'bin/*',
                 'test/*',
