@@ -452,7 +452,7 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
   }
 
   bool is_vulkan() const {
-    return key_set_.has(DispatchKey::VulkanTensorId);
+    return key_set_.has(DispatchKey::Vulkan);
   }
 
   int64_t get_device() const {

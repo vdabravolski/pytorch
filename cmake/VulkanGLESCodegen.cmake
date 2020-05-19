@@ -8,7 +8,7 @@ set(VULKAN_GEN_OUTPUT_PATH "${CMAKE_BINARY_DIR}/vulkan/ATen/native/vulkan")
 if(USE_GLES OR USE_VULKAN_GLES_SHADERC_RUNTIME)
   execute_process(
     COMMAND
-    "${PYTHON_EXECUTABLE}" 
+    "${PYTHON_EXECUTABLE}"
     ${CMAKE_CURRENT_LIST_DIR}/../aten/src/ATen/native/vulkan/gen_glsl.py
     --glsl-path ${CMAKE_CURRENT_LIST_DIR}/../aten/src/ATen/native/vulkan/glsl
     --output-path ${VULKAN_GEN_OUTPUT_PATH}
@@ -37,7 +37,7 @@ if(NOT USE_VULKAN_GLES_SHADERC_RUNTIME)
 
     find_program(
       GLSLC_PATH glslc
-      PATHS 
+      PATHS
       ENV VULKAN_SDK
       PATHS "$ENV{VULKAN_SDK}/${CMAKE_HOST_SYSTEM_PROCESSOR}/bin")
 

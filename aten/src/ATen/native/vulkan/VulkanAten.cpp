@@ -42,7 +42,7 @@ using VulkanTensorImpl = OpaqueTensorImpl<VTensor>;
 at::Tensor new_with_vtensor_vulkan(VTensor&& vt, const TensorOptions& options) {
   auto dims = vt.sizes();
   return detail::make_tensor<VulkanTensorImpl>(
-      DispatchKeySet(DispatchKey::VulkanTensorId),
+      DispatchKeySet(DispatchKey::Vulkan),
       options.dtype(),
       at::Device(at::kVulkan),
       std::move(vt),

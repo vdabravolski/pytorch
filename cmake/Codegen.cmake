@@ -146,7 +146,12 @@ if(INTERN_BUILD_ATEN_OPS)
 
   set(CUSTOM_BUILD_FLAGS)
   if(INTERN_BUILD_MOBILE)
-    list(APPEND CUSTOM_BUILD_FLAGS --backend_whitelist CPU QuantizedCPU)
+    if(USE_VULKAN OR USE_GLES)
+      message(STATUS "XXX VULKAN")
+      list(APPEND CUSTOM_BUILD_FLAGS --backend_whitelist CPU QuantizedCPU Vulkan)
+    else()
+      list(APPEND CUSTOM_BUILD_FLAGS --backend_whitelist CPU QuantizedCPU)
+    endif()
   endif()
 
   if(SELECTED_OP_LIST)

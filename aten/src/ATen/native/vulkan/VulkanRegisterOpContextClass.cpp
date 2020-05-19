@@ -54,7 +54,7 @@ static auto registry =
             torch::RegisterOperators::options()
                 .aliasAnalysis(at::AliasAnalysisKind::PURE_FUNCTION)
                 .kernel<details::convolution2d::Conv2dClampRun>(
-                    DispatchKey::VulkanTensorId));
+                    DispatchKey::Vulkan));
 } // namespace
 
 } // namespace vulkan

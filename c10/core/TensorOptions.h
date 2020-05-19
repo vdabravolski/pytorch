@@ -647,7 +647,7 @@ inline DeviceType computeDeviceType(DispatchKey tid) {
     return DeviceType::HIP;
   } else if (tid == DispatchKey::MkldnnCPU) {
     return DeviceType::CPU;
-  } else if (tid == DispatchKey::VulkanTensorId) {
+  } else if (tid == DispatchKey::Vulkan) {
     return DeviceType::Vulkan;
   } else {
     AT_ASSERTM(false, "Unknown DispatchKey: ", tid);

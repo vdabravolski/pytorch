@@ -177,9 +177,9 @@ TEST(VulkanTest, mean) {
   if (!at::vulkan::is_available())
     return;
   auto t_in = at::rand({2, 3, 3, 3}, at::device(at::kCPU).dtype(at::kFloat));
-  auto t_out_expected = at::mean(t_in, {2, 3}, false /* keepdim */);
+  auto t_out_expected = at::mean(t_in, {2, 3}, false);
   auto tv_in = t_in.vulkan();
-  auto tv_out = at::mean(tv_in, {2, 3}, false /* keepdim */);
+  auto tv_out = at::mean(tv_in, {2, 3}, false);
   auto t_out = tv_out.cpu();
   ASSERT_TRUE(almostEqual(t_out, t_out_expected));
 }
@@ -209,7 +209,7 @@ class Mean : public BaseOp {
  public:
   Mean() : BaseOp(OpType::mean) {}
   at::Tensor run(at::Tensor& t) override {
-    return at::mean(t, {2, 3}, false /* keepdim */);
+    return at::mean(t, {2, 3}, false);
   }
   std::string toString() override {
     return "mean";

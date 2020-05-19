@@ -17,7 +17,7 @@ void main() {
   vec4 v1 = uKernel.data[bufferIdx+1];
   vec4 v2 = uKernel.data[bufferIdx+2];
   vec4 v3 = uKernel.data[bufferIdx+3];
-  
+
   imageStore(uOutput, ivec3(pos.x+0, pos.y, pos.z), v0);
   imageStore(uOutput, ivec3(pos.x+1, pos.y, pos.z), v1);
   imageStore(uOutput, ivec3(pos.x+2, pos.y, pos.z), v2);
