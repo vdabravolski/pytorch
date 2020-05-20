@@ -202,6 +202,8 @@ def parse_args():
 
 def main():
     args = parse_args()
+    
+    print("args from pytorch launch", args)
 
     # world size in terms of number of processes
     dist_world_size = args.nproc_per_node * args.nnodes
@@ -248,7 +250,10 @@ def main():
             cmd.append("--local_rank={}".format(local_rank))
 
         cmd.extend(args.training_script_args)
-
+        
+        print("****** script parameteres from pytorch launch******")
+        print("cmd", cmd)
+        print("env", current_env)
         process = subprocess.Popen(cmd, env=current_env)
         processes.append(process)
 
