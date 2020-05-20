@@ -273,6 +273,10 @@ bool RpcAgent::isGILProfilingEnabled() {
   return profilingEnabled_.load();
 }
 
+std::vector<std::string> RpcAgent::getTimeoutErrorDescription() {
+  return std::vector<std::string>{};
+}
+
 std::unordered_map<std::string, std::string> RpcAgent::getDebugInfo() {
   /* This would later include more info other than metrics for eg: may include
      stack traces for the threads owned by the agent */

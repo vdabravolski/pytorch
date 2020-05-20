@@ -9,6 +9,7 @@
 #include <torch/csrc/distributed/rpc/python_call.h>
 #include <torch/csrc/distributed/rpc/python_remote_call.h>
 #include <torch/csrc/distributed/rpc/python_resp.h>
+#include <torch/csrc/distributed/rpc/rpc_agent.h>
 #include <torch/csrc/distributed/rpc/rref_proto.h>
 #include <torch/csrc/distributed/rpc/script_call.h>
 #include <torch/csrc/distributed/rpc/script_remote_call.h>
@@ -19,6 +20,27 @@
 namespace torch {
 namespace distributed {
 namespace rpc {
+
+RPCErrorType getRPCErrorType(const FutureMessage& fm) {
+  TORCH_INTERNAL_ASSERT(
+      fm.hasError(),
+      "FutureMessage passed to getRPCErrorType does not have an error.");
+  auto timeoutErrors =
+      RpcAgent::getCurrentRpcAgent()->getTimeoutErrorDescription();
+  timeoutErrors.emplace_back("failed intentionally");
+
+  auto err = std::string(fm.error()->what());
+  if (std::any_of(
+          timeoutErrors.begin(),
+          timeoutErrors.end(),
+          [&err](const std::string& timeoutErrorStr) {
+            return err.find(timeoutErrorStr) != std::string::npos;
+          })) {
+    return RPCErrorType::TIMEOUT;
+  }
+  LOG(INFO) << "Unknown error: " << err;
+  return RPCErrorType::UNKNOWN_ERROR;
+}
 
 std::unique_ptr<RpcCommandBase> deserializeRequest(const Message& request) {
   switch (request.type()) {

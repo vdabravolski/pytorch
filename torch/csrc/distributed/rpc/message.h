@@ -8,6 +8,9 @@ namespace torch {
 namespace distributed {
 namespace rpc {
 
+// An enum denoting common RPC errors to allow specific error handling for them.
+enum RPCErrorType { TIMEOUT = 0, UNKNOWN_ERROR = 10 };
+
 enum MessageType {
   // messages for dist.rpc on builtin operators
   SCRIPT_CALL = 0,
