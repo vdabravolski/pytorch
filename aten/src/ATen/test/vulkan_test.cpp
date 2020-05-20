@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <ATen/core/dispatch/Dispatcher.h>
-#include "ATen/ATen.h"
-#include "ATen/vulkan/Context.h"
+#include <ATen/ATen.h>
+#include <ATen/vulkan/Context.h>
 
 bool checkRtol(const at::Tensor& diff, const std::vector<at::Tensor> inputs) {
   double maxValue = 0.0;

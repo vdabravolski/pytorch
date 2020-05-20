@@ -9,7 +9,7 @@
 #include <c10/util/Exception.h>
 
 #ifdef USE_VULKAN_WRAPPER
-#include "vulkan_wrapper.h"
+#include <vulkan_wrapper.h>
 #else
 #include <vulkan/vulkan.h>
 #endif
@@ -19,7 +19,7 @@
 
 #ifdef USE_VULKAN_GLES_SHADERC_RUNTIME
 #include <ATen/native/vulkan/glsl.h>
-#include "shaderc/shaderc.hpp"
+#include <shaderc/shaderc.hpp>
 #else
 #include <ATen/native/vulkan/spv.h>
 #endif

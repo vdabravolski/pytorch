@@ -495,10 +495,10 @@ if(USE_VULKAN)
       ${VULKAN_WRAPPER_DIR}/vulkan_wrapper.h
       ${VULKAN_WRAPPER_DIR}/vulkan_wrapper.cpp)
 
-    target_include_directories (VulkanWrapper PUBLIC .)
-    target_include_directories (VulkanWrapper PUBLIC "${VULKAN_INCLUDE_DIR}")
+    target_include_directories(VulkanWrapper PUBLIC .)
+    target_include_directories(VulkanWrapper PUBLIC "${VULKAN_INCLUDE_DIR}")
 
-    target_link_libraries (VulkanWrapper ${CMAKE_DL_LIBS})
+    target_link_libraries(VulkanWrapper ${CMAKE_DL_LIBS})
 
     include_directories(SYSTEM ${VULKAN_WRAPPER_DIR})
     list(APPEND Caffe2_DEPENDENCY_LIBS VulkanWrapper)
@@ -523,7 +523,7 @@ if(USE_VULKAN)
         PATHS "${Shaderc_ANDROID_NDK_LIB_DIR}")
 
       # Shaderc in NDK is not prebuilt
-      if (NOT GOOGLE_SHADERC_LIBRARIES)
+      if(NOT GOOGLE_SHADERC_LIBRARIES)
         set(NDK_SHADERC_DIR "${ANDROID_NDK}/sources/third_party/shaderc")
         set(NDK_BUILD_CMD "${ANDROID_NDK}/ndk-build")
 
@@ -580,10 +580,10 @@ if(USE_VULKAN)
         ${VULKAN_WRAPPER_DIR}/vulkan_wrapper.h
         ${VULKAN_WRAPPER_DIR}/vulkan_wrapper.cpp)
 
-      target_include_directories (VulkanWrapper PUBLIC .)
-      target_include_directories (VulkanWrapper PUBLIC "${VULKAN_INCLUDE_DIR}")
+      target_include_directories(VulkanWrapper PUBLIC .)
+      target_include_directories(VulkanWrapper PUBLIC "${VULKAN_INCLUDE_DIR}")
 
-      target_link_libraries (VulkanWrapper ${CMAKE_DL_LIBS})
+      target_link_libraries(VulkanWrapper ${CMAKE_DL_LIBS})
 
       include_directories(SYSTEM ${VULKAN_WRAPPER_DIR})
       list(APPEND Caffe2_DEPENDENCY_LIBS VulkanWrapper)
@@ -621,7 +621,7 @@ if(USE_VULKAN)
           DEFAULT_MSG
           GOOGLE_SHADERC_INCLUDE_DIRS
           GOOGLE_SHADERC_LIBRARIES)
-      if (NOT Shaderc_FOUND)
+      if(NOT Shaderc_FOUND)
         message(FATAL_ERROR "USE_VULKAN: Shaderc not found in VULKAN_SDK")
       else()
         message(STATUS "shaderc FOUND include:${GOOGLE_SHADERC_INCLUDE_DIRS}")

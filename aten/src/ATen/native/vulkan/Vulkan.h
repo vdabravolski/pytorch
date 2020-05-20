@@ -7,7 +7,7 @@
 #include <vector>
 
 #ifdef USE_VULKAN_WRAPPER
-#include "vulkan_wrapper.h"
+#include <vulkan_wrapper.h>
 #else
 #include <vulkan/vulkan.h>
 #endif
